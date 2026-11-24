@@ -253,6 +253,17 @@
   .grid-entiti { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 2px 8px; }
   .pilih-entiti { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 0; cursor: pointer; }
   .pilih-entiti input { width: 16px; height: 16px; }
+  /* v10: penyertaan rentas entiti */
+  .kotak-serta { border: 1.5px solid var(--garis); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; background: #fff; }
+  .kotak-serta summary { cursor: pointer; }
+  .senarai-serta { margin: 10px 0 8px; display: grid; gap: 8px; }
+  .baris-serta { border: 1px solid var(--garis); border-radius: 8px; padding: 8px 10px; background: #FAFBFD; }
+  .serta-kepala { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .serta-kepala button { margin-left: auto; padding: 0 8px; }
+  .serta-isi { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .serta-isi input[type=number] { width: 70px; margin-left: 4px; border: 1.5px solid var(--garis); border-radius: 6px; padding: 4px 6px; }
+  .serta-catatan { width: 100%; margin-top: 6px; border: 1.5px solid var(--garis); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 13px; }
+  .tambah-serta { width: 100%; border: 1.5px dashed var(--garis); border-radius: 8px; padding: 8px; font: inherit; background: #fff; }
 </style>
 
   <script>var API_URL = 'https://script.google.com/macros/s/AKfycbyxS3RX1CqidajiDYVPxlQcMtDVoKAOZmuMsa9KkjcjRUStyfj01BHnyomyfVfi_azBSQ/exec';</script>
@@ -317,7 +328,7 @@ var MENU = [
   { id: 'utama', label: 'Utama' },
   { id: 'hantar', label: 'Hantar Laporan' },
   { id: 'saya', label: 'Laporan Saya' },
-  { id: 'semak', label: 'Semakan Laporan', penyemak: true },
+  { id: 'semak', label: 'Semakan', penyemak: true },
   { id: 'pelan', label: 'Pelan' },
   { id: 'tertunggak', label: 'Tertunggak' },
   { id: 'admin', label: 'Admin', admin: true },
@@ -434,6 +445,73 @@ function bacaTerlibat(akar) {
   return $$('[data-terlibat]', akar).filter(function (c) { return c.checked; }).map(function (c) { return c.dataset.terlibat; }).join(',');
 }
 
+// ---------- v10: Penyertaan rentas entiti ----------
+function jenisSokongan() {
+  var j = (KEADAAN.tetapan || {}).JENIS_SOKONGAN;
+  return (Array.isArray(j) ? j : []).filter(function (x) { return x.aktif !== false; });
+}
+function namaSokongan(kod) {
+  var j = ((KEADAAN.tetapan || {}).JENIS_SOKONGAN || []).filter(function (x) { return x.kod === kod; })[0];
+  return j ? j.nama : kod;
+}
+// Ringkasan satu baris: "ST 12 hadir · Bantu persiapan; GS · Hadir mesyuarat"
+function ringkasPenyertaan(senarai) {
+  return (senarai || []).map(function (p) {
+    var bah = [];
+    if (Number(p.hadir) > 0) bah.push(p.hadir + ' hadir');
+    (p.sokongan || []).forEach(function (k) { bah.push(namaSokongan(k)); });
+    return kodEntiti(p.entiti_id) + (bah.length ? ' (' + bah.join(', ') + ')' : '');
+  }).join('; ');
+}
+function barisPenyertaan(eid, p) {
+  p = p || {};
+  var sok = p.sokongan || [];
+  var perluCatatan = jenisSokongan().some(function (j) { return j.catatan; });
+  return '<div class="baris-serta" data-serta="' + esc(eid) + '">' +
+    '<div class="serta-kepala"><b>' + esc(kodEntiti(eid)) + '</b> <span class="kecil" style="color:var(--teks-2)">' + esc(namaEntiti(eid)) + '</span>' +
+      '<button type="button" class="butang kecil garis" data-buang-serta title="Buang">×</button></div>' +
+    '<div class="serta-isi"><label class="kecil">Hadir <input type="number" min="0" data-hadir value="' + esc(p.hadir || '') + '" placeholder="0"></label>' +
+      jenisSokongan().map(function (j) {
+        return '<label class="pilih-entiti"><input type="checkbox" data-sokongan="' + esc(j.kod) + '"' + (sok.indexOf(j.kod) >= 0 ? ' checked' : '') + '> ' + esc(j.nama) + '</label>';
+      }).join('') + '</div>' +
+    (perluCatatan ? '<input class="serta-catatan" data-catatan placeholder="Catatan (wajib untuk Lain-lain)" value="' + esc(p.catatan || '') + '">' : '') +
+  '</div>';
+}
+// Pasang komponen penyertaan dalam `akar`. jemputan = senarai id dipapar dahulu; sedia = penyertaan sedia ada.
+function pasangPenyertaan(akar, pemilikId, jemputan, sedia) {
+  sedia = sedia || [];
+  var ada = {};
+  sedia.forEach(function (p) { ada[p.entiti_id] = p; });
+  var mula = sedia.map(function (p) { return p.entiti_id; });
+  (jemputan || []).forEach(function (id) { if (id && id !== pemilikId && mula.indexOf(id) < 0) mula.push(id); });
+  var lain = KEADAAN.entiti.filter(function (e) { return String(e.aktif).toUpperCase() !== 'FALSE' && e.id !== pemilikId; });
+  akar.innerHTML = '<div class="senarai-serta">' + mula.map(function (id) { return barisPenyertaan(id, ada[id]); }).join('') + '</div>' +
+    '<select class="tambah-serta"><option value="">+ Tambah entiti yang menyertai…</option>' +
+      lain.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.kod + ' — ' + e.nama) + '</option>'; }).join('') + '</select>' +
+    '<span class="bantu">Mata: hadir ' + ((KEADAAN.tetapan || {}).MATA_PESERTA || 2) + ', ' +
+      jenisSokongan().map(function (j) { return j.nama.toLowerCase() + ' ' + j.mata; }).join(', ') + '. Dikira selepas laporan diluluskan.</span>';
+  var pasangBuang = function () {
+    $$('[data-buang-serta]', akar).forEach(function (b) { b.onclick = function () { b.closest('.baris-serta').remove(); }; });
+  };
+  $('.tambah-serta', akar).onchange = function () {
+    var id = this.value; this.value = '';
+    if (!id || $('[data-serta="' + id + '"]', akar)) return;
+    $('.senarai-serta', akar).insertAdjacentHTML('beforeend', barisPenyertaan(id, null));
+    pasangBuang();
+  };
+  pasangBuang();
+}
+function bacaPenyertaan(akar) {
+  return $$('[data-serta]', akar).map(function (r) {
+    return {
+      entiti_id: r.dataset.serta,
+      hadir: Number(($('[data-hadir]', r) || {}).value || 0),
+      sokongan: $$('[data-sokongan]', r).filter(function (c) { return c.checked; }).map(function (c) { return c.dataset.sokongan; }),
+      catatan: (($('[data-catatan]', r) || {}).value || '').trim(),
+    };
+  }).filter(function (p) { return p.hadir > 0 || p.sokongan.length; });
+}
+
 function labelStatusLaporan(l) {
   if (l.status === 'DITOLAK') return '<span class="lencana MERAH" title="' + esc(l.sebab_tolak) + '">Ditolak</span><div class="kecil">' + esc(l.sebab_tolak) + '</div>';
   if (l.status === 'MENUNGGU') return '<span class="lencana KUNING">Menunggu semakan</span>';
@@ -468,7 +546,9 @@ function bukaCopywriting(laporanId, selepas) {
 // Kemas kini lencana "laporan menunggu" pada menu (penyemak sahaja).
 function segarkanMenunggu() {
   if (!KEADAAN.penyemak) return Promise.resolve();
-  return apiT('apiLaporanMenunggu').then(function (s) { KEADAAN.bilMenunggu = s.length; lukisMenu(); }).catch(function () {});
+  return Promise.all([apiT('apiLaporanMenunggu'), apiT('apiSenaraiPerubahan')]).then(function (r) {
+    KEADAAN.bilMenunggu = r[0].length + r[1].length; lukisMenu();
+  }).catch(function () {});
 }
 
 function toast(mesej, jenis) {
@@ -853,16 +933,23 @@ function lukisDash(isi, d) {
   var k = d.kad;
   var skopLabel = DASH.penapis.entiti_id ? namaEntiti(DASH.penapis.entiti_id) : 'Keseluruhan';
   var tempoh = labelTempohDash();
+  // v10: kad Mata Penyertaan — entiti dipilih: mata & bonus entiti; keseluruhan: jumlah semua entiti.
+  var semuaKed = (d.kedudukan.ukj || []).concat(d.kedudukan.lajnah || []);
+  var mataPaparan = DASH.penapis.entiti_id ? (k.mataPenyertaan || 0) : semuaKed.reduce(function (a, r) { return a + (r.mataPenyertaan || 0); }, 0);
+  var subPenyertaan = DASH.penapis.entiti_id
+    ? (k.sesiPenyertaan || 0) + ' sesi menyertai entiti lain · bonus +' + Math.round((k.bonus || 0) * 1000) / 10 + '%'
+    : 'Jumlah semua entiti · pilih UKJ/Lajnah untuk bonus';
   isi.innerHTML =
     '<div class="grid-kad">' +
       '<div class="kad kad-angka utama-navy"><div class="label">Skor KPI <span class="ikon-bulat">' + IKON_KAD.skor + '</span></div>' +
-        '<div><div class="nilai">' + fmtPeratus(k.skor) + '</div><div class="sub">' + esc(skopLabel) + ' · ' + esc(tempoh) + ' ' + (k.warna ? lencanaWarna(k.warna) : '') + '</div></div></div>' +
+        '<div><div class="nilai">' + fmtPeratus(k.skor) + '</div><div class="sub">' + esc(skopLabel) + ' · ' + esc(tempoh) + ' ' + (k.warna ? lencanaWarna(k.warna) : '') +
+          (k.bonus && k.skor !== null && k.skor !== undefined ? '<div>termasuk bonus penyertaan +' + Math.round(k.bonus * 1000) / 10 + '%</div>' : '') + '</div></div></div>' +
       '<div class="kad kad-angka"><div class="label">% Pelaksanaan ' + IKON_KAD.laksana + '</div>' +
-        '<div><div class="nilai">' + fmtPeratus(k.pelaksanaan) + '</div><div class="sub">' + (k.bilSesi || 0) + ' sesi dilaksana' + (k.bilItemDikira !== undefined ? ' · ' + k.bilItemDikira + ' item dikira' : '') + '</div></div></div>' +
+        '<div><div class="nilai">' + fmtPeratus(k.pelaksanaan) + '</div><div class="sub">' + (k.bilSesi || 0) + ' sesi lulus' + (k.bilMenunggu ? ' · ' + k.bilMenunggu + ' menunggu semakan' : '') + (k.bilItemDikira !== undefined ? ' · ' + k.bilItemDikira + ' item dikira' : '') + '</div></div></div>' +
       '<div class="kad kad-angka"><div class="label">% Keterlibatan ' + IKON_KAD.libat + '</div>' +
         '<div><div class="nilai">' + fmtPeratus(k.keterlibatan) + '</div><div class="sub">' + (k.hadirPelan !== undefined ? k.hadirPelan + ' kehadiran program pelan' : 'Kehadiran vs target') + '</div></div></div>' +
-      '<div class="kad kad-angka"><div class="label">Menunggu semakan ' + IKON_KAD.menunggu + '</div>' +
-        '<div><div class="nilai">' + (k.bilMenunggu || 0) + '</div><div class="sub">Laporan belum diluluskan (belum dikira)</div></div></div>' +
+      '<div class="kad kad-angka"><div class="label">Mata Penyertaan ' + IKON_KAD.menunggu + '</div>' +
+        '<div><div class="nilai">' + mataPaparan + '</div><div class="sub">' + subPenyertaan + '</div></div></div>' +
     '</div>' +
     '<div class="grid-dash">' +
       '<div class="kad g-bar"><h3>Dirancang vs Dilaksana<span class="ruang"></span><span class="tag navy">Dirancang</span><span class="tag oren">Dilaksana</span></h3><div class="carta"><canvas id="c-bar"></canvas></div></div>' +
@@ -879,7 +966,7 @@ function lukisDash(isi, d) {
       '<div class="kad g-adhoc"><h3>Cara skor dikira</h3><ul class="senarai kecil">' +
         '<li><div class="isi"><b>Skor KPI</b> = ' + Math.round((KEADAAN.tetapan.BERAT_PELAKSANAAN || 0.8) * 100) + '% pelaksanaan + ' + Math.round((KEADAAN.tetapan.BERAT_KETERLIBATAN || 0.2) * 100) + '% keterlibatan</div></li>' +
         '<li><div class="isi">Hanya laporan yang <b>diluluskan</b> oleh Setiausaha / PSU I dikira.</div></li>' +
-        '<li><div class="isi">Program kongsi dikira untuk pemilik dan setiap entiti terlibat.</div></li>' +
+        '<li><div class="isi"><b>Bonus penyertaan</b>: menyertai program entiti lain (hadir ' + (KEADAAN.tetapan.MATA_PESERTA || 2) + ' mata, sokongan lain 1 mata) memberi bonus sehingga +' + Math.round((KEADAAN.tetapan.BONUS_MAKS || 0.1) * 100) + '%. Tiada penalti.</div></li>' +
         '<li><div class="isi">Hijau ≥ ' + KEADAAN.tetapan.AMBANG_HIJAU + '% · Kuning ≥ ' + KEADAAN.tetapan.AMBANG_KUNING + '% · Merah di bawahnya.</div></li>' +
       '</ul></div>' +
       '<div class="kad g-tunggak"><h3>Tertunggak teratas<span class="ruang"></span><button class="butang kecil garis" id="ke-tertunggak-2">Lihat semua</button></h3><ul class="senarai" id="senarai-tunggak"></ul></div>' +
@@ -942,7 +1029,7 @@ function lukisKedudukan(d) {
       var id = r.entitiId || '';
       return '<li' + (id ? ' data-id="' + esc(id) + '" style="cursor:pointer"' : '') + '><span class="nombor">' + (i + 1) + '</span>' +
         '<div class="isi"><div class="tajuk" title="' + esc(r.nama) + '">' + esc(nama) + '</div></div>' +
-        '<span class="skor">' + fmtPeratus(r.skor) + '</span>' + lencanaWarna(r.warna, '') + '</li>';
+        '<span class="skor">' + fmtPeratus(r.skor) + (r.bonus && r.skor !== null && r.skor !== undefined ? '<span class="kecil" style="display:block;color:var(--oren);font-weight:700" title="Bonus penyertaan">+' + Math.round(r.bonus * 1000) / 10 + '%</span>' : '') + '</span>' + lencanaWarna(r.warna, '') + '</li>';
     }).join('') : '<li class="kosong">Tiada data.</li>';
     $$('#senarai-ked li[data-id]').forEach(function (li) {
       li.onclick = function () {
@@ -1091,7 +1178,7 @@ PAPARAN.hantar = {
                 '<div class="medan"><label>Pemilik</label><select name="entiti_id" id="h-pemilik" ' + (adalahAdmin() ? '' : 'disabled') + '>' + pilihanEntiti(KEADAAN.pengguna.entiti_id) + '</select></div>' +
                 '<div class="medan"><label>Target peserta (pilihan)</label><input type="number" min="0" name="target_peserta" inputmode="numeric"></div>' +
               '</div>' +
-              '<div class="medan"><label>Entiti terlibat (pilihan)</label><div id="h-terlibat"></div></div>' +
+              '<div class="medan"><label>Entiti jemputan (pilihan)</label><div id="h-terlibat"></div></div>' +
               '<span class="bantu" style="display:block;margin:-4px 0 12px">Program ini akan ditambah ke pelan sebagai item <b>Sekali</b> milik entiti anda.</span>' +
             '</div>' +
             '<div class="baris-medan">' +
@@ -1104,12 +1191,26 @@ PAPARAN.hantar = {
             '<div class="medan"><label>Catatan ringkas</label><textarea name="catatan" rows="3" placeholder="Apa yang dibuat, pencapaian, isu…"></textarea></div>' +
             '<div class="medan"><label>Gambar (pilihan)</label><input type="file" accept="image/*" id="h-gambar">' +
               '<span class="bantu">Atau tampal pautan post FB/IG:</span><input name="gambar_url" placeholder="https://…"></div>' +
+            '<details class="kotak-serta" id="h-serta-bungkus"><summary><b>Penyertaan rentas entiti</b> <span class="kecil">(pilihan) — UKJ/Lajnah lain yang hantar peserta, bantu persiapan atau hadir mesyuarat</span></summary><div id="h-serta"></div></details>' +
             '<label style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><input type="checkbox" id="h-cw"> Jana copywriting media sosial selepas hantar</label>' +
             '<button class="butang besar" type="submit">Hantar laporan</button>' +
             '<p class="kecil" style="color:var(--teks-2);margin-top:10px">Laporan akan disemak oleh Setiausaha / PSU I sebelum dikira dalam KPI.</p>' +
           '</form>' +
         '</div>';
       var lukisTerlibat = function () { $('#h-terlibat').innerHTML = pilihTerlibat('', $('#h-pemilik').value); };
+      // Komponen penyertaan: entiti jemputan program dipapar dahulu; dikekalkan jika pemilik & jemputan tidak berubah.
+      var kunciSerta = '';
+      var lukisSerta = function () {
+        var it = baru ? null : bolehHantar.filter(function (i) { return i.id === $('#h-item').value; })[0];
+        var pemilik = baru ? $('#h-pemilik').value : (it ? it.entiti_id : '');
+        var jemputan = baru ? bacaTerlibat($('#h-terlibat')).split(',') : String((it || {}).lajnah_terlibat || '').split(',');
+        var kunci = pemilik + '|' + jemputan.join(',');
+        if (kunci === kunciSerta) return;
+        var sedia = $('#h-serta').children.length ? bacaPenyertaan($('#h-serta')) : [];
+        kunciSerta = kunci;
+        pasangPenyertaan($('#h-serta'), pemilik, jemputan.filter(function (x) { return x; }), sedia.filter(function (p) { return p.entiti_id !== pemilik; }));
+        if (jemputan.filter(function (x) { return x; }).length) $('#h-serta-bungkus').open = true;
+      };
       var setBaru = function (a) {
         baru = a;
         $$('#h-suis button').forEach(function (b) { b.classList.toggle('aktif', (b.dataset.a === '1') === a); });
@@ -1121,18 +1222,22 @@ PAPARAN.hantar = {
         var jenis = it ? it.jenis : 'SEKALI';
         $('#h-kuantiti').hidden = jenis !== 'KUANTITI';
         $('#h-siap').hidden = jenis !== 'SIAP';
-        $('#h-info').innerHTML = it ? esc(namaEntiti(it.entiti_id)) + ' · ' + labelJenis(it) + ' · capaian ' + fmtPeratus(it.peratus) : '';
+        $('#h-info').innerHTML = it ? esc(namaEntiti(it.entiti_id)) + ' · ' + labelJenis(it) + ' · capaian ' + fmtPeratus(it.peratus) +
+          (it.lajnah_terlibat ? ' · jemputan: ' + esc(String(it.lajnah_terlibat).split(',').map(kodEntiti).join(', ')) : '') : '';
+        lukisSerta();
       };
       $$('#h-suis button').forEach(function (b) { b.onclick = function () { setBaru(b.dataset.a === '1'); }; });
       $('#h-item').onchange = kemasMedanJenis;
-      $('#h-pemilik').onchange = lukisTerlibat;
+      $('#h-pemilik').onchange = function () { lukisTerlibat(); lukisSerta(); };
+      $('#h-terlibat').onchange = lukisSerta;
       lukisTerlibat();
       setBaru(baru || !bolehHantar.length);
       $('#f-lapor').onsubmit = function (ev) {
         ev.preventDefault();
         var b = $('button[type=submit]', ev.target);
         var data = nilaiBorang(ev.target);
-        var input = { tarikh: data.tarikh, jumlah_hadir: data.jumlah_hadir, kuantiti: data.kuantiti, siap: data.siap, lokasi: data.lokasi, catatan: data.catatan, gambar_url: data.gambar_url };
+        var input = { tarikh: data.tarikh, jumlah_hadir: data.jumlah_hadir, kuantiti: data.kuantiti, siap: data.siap, lokasi: data.lokasi, catatan: data.catatan, gambar_url: data.gambar_url,
+          penyertaan: bacaPenyertaan($('#h-serta')) };
         if (baru) {
           if (!String(data.nama_program || '').trim()) { toast('Nama program wajib diisi.', 'ralat'); return; }
           input.program_baru = { nama_program: data.nama_program, entiti_id: data.entiti_id, target_peserta: data.target_peserta, lajnah_terlibat: bacaTerlibat($('#h-terlibat')) };
@@ -1192,6 +1297,7 @@ function lukisJadualLaporan(isi, senarai, opsyen) {
         '<td><b>' + esc(l.nama_program) + '</b>' +
           (l.catatan ? '<div class="kecil" style="color:var(--teks-2)">' + esc(l.catatan) + '</div>' : '') +
           (l.lokasi ? '<div class="kecil" style="color:var(--teks-2)">📍 ' + esc(l.lokasi) + '</div>' : '') +
+          (l.penyertaan && l.penyertaan.length ? '<div class="kecil" style="color:var(--navy2)">🤝 Penyertaan: ' + esc(ringkasPenyertaan(l.penyertaan)) + '</div>' : '') +
           (/^https?:\/\//i.test(String(l.gambar_url).trim()) ? '<div><a href="' + esc(l.gambar_url) + '" target="_blank" rel="noopener">Lihat gambar</a></div>' : '') + '</td>' +
         '<td>' + esc(kodEntiti(l.entiti_id)) + '</td>' +
         '<td>' + (l.jenis_item === 'KUANTITI' ? esc(l.kuantiti) + ' (kuantiti)' + (l.jumlah_hadir !== '' ? '<div class="kecil">' + esc(l.jumlah_hadir) + ' hadir</div>' : '')
@@ -1252,26 +1358,68 @@ PAPARAN.saya = {
   },
 };
 
-// ===================== Semakan Laporan (penyemak) =====================
+// ===================== Semakan (penyemak): laporan + perubahan pelan =====================
+var LABEL_MEDAN = { jenis: 'Jenis', kekerapan_bil: 'Bilangan sesi', kekerapan_setiap: 'Setiap', kekerapan_unit: 'Unit', target_peserta: 'Target peserta',
+  target_kuantiti: 'Target kuantiti', kuantiti_unit: 'Unit kuantiti', tarikh_mula: 'Tarikh mula', tarikh_sasaran: 'Tarikh sasaran',
+  tarikh_tamat: 'Tarikh tamat', status: 'Status', sebab_batal: 'Sebab batal' };
+function teksPerubahan(x) {
+  return Object.keys(x.baru || {}).map(function (m) {
+    return '<div><b>' + esc(LABEL_MEDAN[m] || m) + '</b>: ' + esc(x.lama[m] === '' || x.lama[m] === undefined ? '—' : x.lama[m]) + ' → <b style="color:var(--oren-tua,#B7791F)">' + esc(x.baru[m] === '' ? '—' : x.baru[m]) + '</b></div>';
+  }).join('');
+}
+
 PAPARAN.semak = {
-  tajuk: 'Semakan Laporan',
-  render: function (el) {
-    return apiT('apiLaporanMenunggu').then(function (senarai) {
-      KEADAAN.bilMenunggu = senarai.length;
+  tajuk: 'Semakan',
+  render: function (el, param) {
+    var tab = param.tab || 'laporan';
+    return Promise.all([apiT('apiLaporanMenunggu'), apiT('apiSenaraiPerubahan')]).then(function (r) {
+      var laporan = r[0], perubahan = r[1];
+      KEADAAN.bilMenunggu = laporan.length + perubahan.length;
       lukisMenu();
-      if (!senarai.length) {
-        el.innerHTML = '<div class="kad kosong">Tiada laporan menunggu semakan.</div>';
+      el.innerHTML = '<div class="tab" id="s-tab"><button data-t="laporan">Laporan (' + laporan.length + ')</button><button data-t="perubahan">Perubahan pelan (' + perubahan.length + ')</button></div><div id="s-isi"></div>';
+      $$('#s-tab button').forEach(function (b) {
+        b.classList.toggle('aktif', b.dataset.t === tab);
+        b.onclick = function () { navigasi('semak', { tab: b.dataset.t }); };
+      });
+      var isi = $('#s-isi');
+      var kembali = function () { navigasi('semak', { tab: tab }); };
+      if (tab === 'laporan') {
+        if (!laporan.length) { isi.innerHTML = '<div class="kad kosong">Tiada laporan menunggu semakan.</div>'; return; }
+        isi.innerHTML = '<p class="kecil" style="color:var(--teks-2);margin:0 0 10px">' + laporan.length + ' laporan menunggu, paling lama dahulu. ' +
+          (adalahAdminPenuh() ? 'Sebagai Admin Penuh, anda boleh meluluskan semua laporan.' : 'Laporan anda sendiri perlu diluluskan oleh penyemak lain.') + '</p><div id="s-jadual"></div>';
+        lukisJadualLaporan($('#s-jadual'), laporan, { penghantar: true, kembali: kembali });
         return;
       }
-      el.innerHTML = '<p class="kecil" style="color:var(--teks-2);margin:0 0 10px">' + senarai.length + ' laporan menunggu semakan, paling lama dahulu. ' +
-        (adalahAdminPenuh() ? 'Sebagai Admin Penuh, anda boleh meluluskan semua laporan.' : 'Laporan anda sendiri perlu diluluskan oleh penyemak lain.') + '</p><div id="s-isi"></div>';
-      lukisJadualLaporan($('#s-isi'), senarai, { penghantar: true, kembali: function () { navigasi('semak'); } });
+      if (!perubahan.length) { isi.innerHTML = '<div class="kad kosong">Tiada perubahan pelan menunggu kelulusan.</div>'; return; }
+      isi.innerHTML = '<p class="kecil" style="color:var(--teks-2);margin:0 0 10px">Perubahan pada kekerapan, target, tarikh atau pembatalan program menjejaskan skor, jadi perlu kelulusan.</p>' +
+        '<div class="kad"><div class="jadual-bungkus"><table class="jadual"><thead><tr><th>Program</th><th>Entiti</th><th>Perubahan</th><th>Dimohon</th><th></th></tr></thead><tbody>' +
+        perubahan.map(function (x) {
+          return '<tr><td><b>' + esc(x.nama_program) + '</b></td><td>' + esc(kodEntiti(x.entiti_id)) + '</td><td class="kecil">' + teksPerubahan(x) + '</td>' +
+            '<td class="kecil">' + esc(x.dimohon_nama) + '<div style="color:var(--teks-2)">' + esc(x.dimohon_pada) + '</div></td>' +
+            '<td><div class="aksi-sel">' + (x.bolehLulus ? '<button class="butang kecil oren" data-lulus-p="' + esc(x.id) + '">Luluskan</button> <button class="butang kecil bahaya" data-tolak-p="' + esc(x.id) + '">Tolak</button>'
+              : '<span class="kecil" style="color:var(--teks-2)">Perlu penyemak lain</span>') + '</div></td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+      $$('[data-lulus-p]', isi).forEach(function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          apiT('apiLuluskanPerubahan', b.dataset.lulusP).then(function () { toast('Perubahan diluluskan.'); LAPORAN.items = null; kembali(); })
+            .catch(function (e) { toast(e.message, 'ralat'); b.disabled = false; });
+        };
+      });
+      $$('[data-tolak-p]', isi).forEach(function (b) {
+        b.onclick = function () {
+          modal('Tolak perubahan', '<div class="medan"><label>Sebab (wajib)</label><textarea name="sebab" rows="3"></textarea></div>',
+            [{ label: 'Batal', kelas: 'garis' }, { label: 'Tolak', kelas: 'bahaya', tindakan: function (d) {
+              return apiT('apiTolakPerubahan', b.dataset.tolakP, nilaiBorang(d).sebab).then(function () { toast('Perubahan ditolak.'); kembali(); });
+            } }]);
+        };
+      });
     });
   },
 };
 
 function editLaporan(l, kembali) {
-  modal('Edit laporan — ' + l.nama_program,
+  var d = modal('Edit laporan — ' + l.nama_program,
     (l.status === 'DITOLAK' ? '<p class="kecil" style="color:var(--merah)">Ditolak: ' + esc(l.sebab_tolak) + '. Selepas disimpan, laporan dihantar semula untuk semakan.</p>' : '') +
     '<div class="baris-medan"><div class="medan"><label>Tarikh</label><input type="date" name="tarikh" max="' + KEADAAN.hariIni + '" value="' + esc(l.tarikh) + '"></div>' +
     '<div class="medan"><label>Jumlah hadir</label><input type="number" min="0" name="jumlah_hadir" value="' + esc(l.jumlah_hadir) + '"></div>' +
@@ -1279,12 +1427,17 @@ function editLaporan(l, kembali) {
     (l.jenis_item === 'SIAP' ? '<label style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><input type="checkbox" name="siap"' + (String(l.siap).toUpperCase() === 'TRUE' ? ' checked' : '') + '> Siap</label>' : '') +
     '<div class="medan"><label>Lokasi</label><input name="lokasi" value="' + esc(l.lokasi) + '"></div>' +
     '<div class="medan"><label>Catatan</label><textarea name="catatan" rows="3">' + esc(l.catatan) + '</textarea></div>' +
-    '<div class="medan"><label>Pautan gambar</label><input name="gambar_url" value="' + esc(l.gambar_url) + '"></div>',
+    '<div class="medan"><label>Pautan gambar</label><input name="gambar_url" value="' + esc(l.gambar_url) + '"></div>' +
+    '<div class="medan"><label>Penyertaan rentas entiti</label><div id="e-serta"></div></div>',
     [{ label: 'Batal', kelas: 'garis' }, { label: 'Simpan', tindakan: function (d) {
-      return apiT('apiKemasLaporan', l.id, nilaiBorang(d), null).then(function () {
+      var data = nilaiBorang(d);
+      data.penyertaan = bacaPenyertaan($('#e-serta', d));
+      return apiT('apiKemasLaporan', l.id, data, null).then(function () {
         toast('Laporan dikemas kini.'); segarkanMenunggu(); if (kembali) kembali();
       });
     } }]);
+  var itm = (LAPORAN.items || []).filter(function (i) { return i.id === l.item_id; })[0];
+  pasangPenyertaan($('#e-serta', d), l.entiti_id, String((itm || {}).lajnah_terlibat || '').split(',').filter(function (x) { return x; }), l.penyertaan || []);
 }
 </script>
 
@@ -1338,8 +1491,9 @@ function lukisPelan(items) {
       var semak = String(i.perlu_disemak).toUpperCase() === 'TRUE';
       return '<tr' + (batal ? ' style="opacity:.55"' : '') + '><td><b>' + esc(i.nama_program) + '</b>' +
         (semak ? ' <span class="tag oren" title="' + esc(i.catatan_semak) + '">Perlu disemak</span>' : '') +
+        (i.perubahan ? ' <span class="tag navy" title="Menunggu kelulusan penyemak">Perubahan menunggu</span>' : '') +
         (batal ? ' <span class="tag">Dibatalkan: ' + esc(i.sebab_batal) + '</span>' : '') +
-        (i.lajnah_terlibat ? '<div class="kecil" style="color:var(--teks-2)">Terlibat: ' + esc(String(i.lajnah_terlibat).split(',').map(kodEntiti).join(', ')) + '</div>' : '') + '</td>' +
+        (i.lajnah_terlibat ? '<div class="kecil" style="color:var(--teks-2)">Jemputan: ' + esc(String(i.lajnah_terlibat).split(',').map(kodEntiti).join(', ')) + '</div>' : '') + '</td>' +
         '<td>' + esc(kodEntiti(i.entiti_id)) + '</td>' +
         '<td style="white-space:nowrap">' + esc(labelJenis(i)) + (Number(i.target_peserta) ? '<div class="kecil">' + i.target_peserta + ' peserta/sesi</div>' : '') + '</td>' +
         '<td style="white-space:nowrap">' + lencanaWarna(i.warna, fmtPeratus(i.peratus)) +
@@ -1348,7 +1502,7 @@ function lukisPelan(items) {
         '<td style="white-space:nowrap">' +
           (i.bolehHantar ? '<button class="butang kecil oren" data-lapor="' + esc(i.id) + '">Lapor</button> ' : '') +
           (i.bolehUrus ? '<button class="butang kecil garis" data-ubah="' + esc(i.id) + '">Ubah</button>'
-            : i.bolehUbahTerlibat ? '<button class="butang kecil garis" data-terlibat-ubah="' + esc(i.id) + '">Entiti terlibat</button>' : '') +
+            : i.bolehUbahTerlibat ? '<button class="butang kecil garis" data-terlibat-ubah="' + esc(i.id) + '">Jemputan</button>' : '') +
         '</td></tr>';
     }).join('') + '</tbody></table></div></div>';
   var cari = function (id) { return items.filter(function (i) { return i.id === id; })[0]; };
@@ -1386,13 +1540,15 @@ function borangItem(it, prasetel) {
       '<div class="medan" data-jenis="SEKALI SIAP KUANTITI"><label>Tarikh sasaran</label><input type="date" name="tarikh_sasaran" value="' + esc(it.tarikh_sasaran) + '"></div>' +
       '<div class="medan"><label>Target peserta / sesi (pilihan)</label><input type="number" min="0" name="target_peserta" value="' + esc(it.target_peserta) + '"></div>' +
     '</div>' +
-    '<div class="medan"><label>Entiti terlibat (UKJ / Lajnah)</label><div id="i-terlibat">' + pilihTerlibat(it.lajnah_terlibat, it.entiti_id) + '</div>' +
-      '<span class="bantu">Program kongsi dikira untuk pemilik dan setiap entiti terlibat. Hanya pemilik melapor.</span></div>' +
+    '<div class="medan"><label>Entiti jemputan (UKJ / Lajnah)</label><div id="i-terlibat">' + pilihTerlibat(it.lajnah_terlibat, it.entiti_id) + '</div>' +
+      '<span class="bantu">Jemputan dipapar dahulu dalam borang Penyertaan rentas entiti. Entiti lain mendapat mata hanya bila benar-benar menyertai.</span></div>' +
+    (!baru && !adalahAdminPenuh() ? '<p class="kecil" style="background:var(--oren-muda,#FFF4DF);padding:8px 10px;border-radius:8px">Perubahan pada jenis, kekerapan, target, tarikh atau pembatalan akan dihantar untuk <b>kelulusan penyemak</b>. Medan lain disimpan terus.</p>' : '') +
+    (it.perubahan ? '<div class="kecil" style="margin-bottom:10px"><b>Perubahan menunggu kelulusan:</b>' + teksPerubahan(it.perubahan) + '</div>' : '') +
     '<div class="medan"><label>PIC</label><input name="pic_teks" value="' + esc(it.pic_teks) + '" placeholder="Nama PIC"></div>' +
     (baru ? '' : '<label style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input type="checkbox" name="perlu_disemak"' + (String(it.perlu_disemak).toUpperCase() === 'TRUE' ? ' checked' : '') + '> Perlu disemak</label>' +
       (it.catatan_semak ? '<div class="kecil" style="color:var(--teks-2);margin-bottom:10px">Catatan: ' + esc(it.catatan_semak) + '</div>' : '') +
       (it.teks_asal_kpi ? '<div class="kecil" style="color:var(--teks-2)">Teks KPI asal: “' + esc(it.teks_asal_kpi) + '”</div>' : '')),
-    (baru ? [] : [it.status === 'BATAL'
+    (baru ? [] : [{ label: 'Sejarah', kelas: 'garis', tindakan: function () { lihatSejarah(it); return false; } }, it.status === 'BATAL'
       ? { label: 'Aktifkan semula', kelas: 'garis', tindakan: function () { return apiT('apiAktifkanItem', it.id).then(selepasSimpanItem); } }
       : { label: 'Batalkan item', kelas: 'bahaya', tindakan: function () { batalItem(it); } }])
       .concat([{ label: 'Tutup', kelas: 'garis' }, { label: 'Simpan', tindakan: function (dlg) {
@@ -1400,7 +1556,7 @@ function borangItem(it, prasetel) {
         data.lajnah_terlibat = bacaTerlibat($('#i-terlibat', dlg));
         if (!adalahAdmin()) delete data.entiti_id;
         if (!baru) data.id = it.id;
-        return apiT('apiSimpanItem', data).then(selepasSimpanItem);
+        return apiT('apiSimpanItem', data).then(function (r) { selepasSimpanItem(r); });
       } }]));
   var kemas = function () {
     var j = $('#i-jenis', d).value;
@@ -1414,25 +1570,35 @@ function borangItem(it, prasetel) {
 
 // PIC pemilik (bukan Ketua) hanya boleh ubah entiti terlibat.
 function ubahTerlibat(it) {
-  modal('Entiti terlibat — ' + it.nama_program,
-    '<p class="kecil" style="color:var(--teks-2)">Program kongsi dikira untuk pemilik dan setiap entiti terlibat. Hanya pemilik (' + esc(kodEntiti(it.entiti_id)) + ') melapor.</p>' +
+  modal('Entiti jemputan — ' + it.nama_program,
+    '<p class="kecil" style="color:var(--teks-2)">Entiti jemputan dipapar dahulu dalam borang Penyertaan rentas entiti semasa ' + esc(kodEntiti(it.entiti_id)) + ' melapor. Mata diberi hanya untuk penyertaan sebenar.</p>' +
     '<div id="t-terlibat">' + pilihTerlibat(it.lajnah_terlibat, it.entiti_id) + '</div>',
     [{ label: 'Batal', kelas: 'garis' }, { label: 'Simpan', tindakan: function (d) {
       return apiT('apiKemasTerlibat', it.id, bacaTerlibat($('#t-terlibat', d))).then(selepasSimpanItem);
     } }]);
 }
 
-function selepasSimpanItem() {
-  toast('Item pelan disimpan.');
+function selepasSimpanItem(r) {
+  toast(r && r.perubahanMenunggu ? 'Disimpan. Perubahan sasaran dihantar untuk kelulusan penyemak.' : 'Item pelan disimpan.');
+  segarkanMenunggu();
   LAPORAN.items = null;
   navigasi('pelan');
+}
+
+function lihatSejarah(it) {
+  apiT('apiSejarahItem', it.id).then(function (s) {
+    modal('Sejarah perubahan — ' + it.nama_program, s.length ? '<ul class="senarai">' + s.map(function (x) {
+      var lbl = { MENUNGGU: 'Menunggu', LULUS: 'Diluluskan', DITOLAK: 'Ditolak', TERUS: 'Terus (Admin Penuh)' }[x.status] || x.status;
+      return '<li><div class="isi"><div class="kecil">' + esc(x.dimohon_pada) + ' · ' + esc(x.dimohon_nama) + ' · <b>' + esc(lbl) + '</b>' + (x.sebab_tolak ? ' — ' + esc(x.sebab_tolak) : '') + '</div>' + teksPerubahan(x) + '</div></li>';
+    }).join('') + '</ul>' : '<p>Tiada perubahan sasaran direkod.</p>');
+  }).catch(function (e) { toast(e.message, 'ralat'); });
 }
 
 function batalItem(it) {
   modal('Batalkan item', '<p><b>' + esc(it.nama_program) + '</b> akan dikeluarkan daripada pengiraan KPI tetapi kekal dalam senarai.</p>' +
     '<div class="medan"><label>Sebab pembatalan</label><textarea name="sebab" rows="3"></textarea></div>',
     [{ label: 'Kembali', kelas: 'garis' }, { label: 'Batalkan item', kelas: 'bahaya', tindakan: function (d) {
-      return apiT('apiBatalItem', it.id, nilaiBorang(d).sebab).then(selepasSimpanItem);
+      return apiT('apiBatalItem', it.id, nilaiBorang(d).sebab).then(function (r) { selepasSimpanItem(r); });
     } }]);
 }
 </script>
@@ -1622,9 +1788,34 @@ function adminTetapan(isi) {
           return '<label style="display:flex;gap:8px;align-items:center;padding:4px 0"><input type="checkbox" data-penyemak="' + esc(u.id) + '"' + (penyemak.indexOf(u.id) >= 0 ? ' checked' : '') + '> ' +
             esc(u.nama) + ' <span class="kecil" style="color:var(--teks-2)">· ' + esc(u.jawatan || labelPeranan(u.peranan)) + '</span></label>';
         }).join('') + '</div>' +
+      '<h3>Penyertaan rentas entiti</h3>' +
+      '<div class="baris-medan">' +
+        '<div class="medan"><label>Mata hantar peserta</label><input type="number" min="0" max="10" name="MATA_PESERTA" value="' + esc(t.MATA_PESERTA) + '"></div>' +
+        '<div class="medan"><label>Sasaran mata sebulan</label><input type="number" min="1" name="SASARAN_MATA_BULANAN" value="' + esc(t.SASARAN_MATA_BULANAN) + '"></div>' +
+        '<div class="medan"><label>Bonus maksimum (%)</label><input type="number" min="0" max="20" name="BONUS_PC" value="' + Math.round(Number(t.BONUS_MAKS) * 100) + '"></div></div>' +
+      '<div class="medan"><label>Jenis sokongan</label><div id="t-jenis"></div><button type="button" class="butang kecil garis" id="t-jenis-tambah">+ Jenis sokongan</button>' +
+        '<span class="bantu">Bonus = min(1, mata ÷ (sasaran × bulan)) × bonus maksimum. Tiada penalti jika tidak menyertai.</span></div>' +
       '<h3>Copywriting media sosial</h3>' +
       '<div class="medan"><label>Hashtag lalai</label><input name="HASHTAG_MEDSOS" value="' + esc(t.HASHTAG_MEDSOS) + '" placeholder="#PemudaGombak"><span class="bantu">Ditambah di hujung setiap kapsyen.</span></div>' +
       '<button class="butang" type="submit">Simpan tetapan</button></form></div>';
+    var jenis = (t.JENIS_SOKONGAN || []).map(function (j) { return Object.assign({}, j); });
+    var lukisJenis = function () {
+      $('#t-jenis').innerHTML = jenis.map(function (j, i) {
+        return '<div class="baris-serta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<input data-j="' + i + '" data-k="nama" value="' + esc(j.nama) + '" style="flex:1;min-width:140px">' +
+          '<label class="kecil">Mata <input data-j="' + i + '" data-k="mata" type="number" min="0" max="5" value="' + esc(j.mata) + '" style="width:60px"></label>' +
+          '<label class="kecil"><input type="checkbox" data-j="' + i + '" data-k="aktif"' + (j.aktif !== false ? ' checked' : '') + '> Aktif</label>' +
+          '<label class="kecil"><input type="checkbox" data-j="' + i + '" data-k="catatan"' + (j.catatan ? ' checked' : '') + '> Catatan wajib</label></div>';
+      }).join('');
+      $$('#t-jenis [data-j]').forEach(function (inp) {
+        inp.oninput = inp.onchange = function () {
+          var j = jenis[inp.dataset.j];
+          j[inp.dataset.k] = inp.type === 'checkbox' ? inp.checked : (inp.dataset.k === 'mata' ? Number(inp.value) : inp.value);
+        };
+      });
+    };
+    lukisJenis();
+    $('#t-jenis-tambah').onclick = function () { jenis.push({ nama: 'Jenis baharu', mata: 1, aktif: true }); lukisJenis(); };
     var semak = function () {
       var f = nilaiBorang($('#f-tetapan'));
       var j = Number(f.P) + Number(f.K);
@@ -1643,6 +1834,8 @@ function adminTetapan(isi) {
         TARIKH_MULA_PELAN: f.TARIKH_MULA_PELAN, TARIKH_TAMAT: f.TARIKH_TAMAT,
         BERAT_PELAKSANAAN: Number(f.P) / 100, BERAT_KETERLIBATAN: Number(f.K) / 100,
         AMBANG_HIJAU: f.AMBANG_HIJAU, AMBANG_KUNING: f.AMBANG_KUNING, HASHTAG_MEDSOS: f.HASHTAG_MEDSOS,
+        MATA_PESERTA: Number(f.MATA_PESERTA), SASARAN_MATA_BULANAN: Number(f.SASARAN_MATA_BULANAN), BONUS_MAKS: Number(f.BONUS_PC) / 100,
+        JENIS_SOKONGAN: jenis,
         PENYEMAK_LAPORAN: $$('[data-penyemak]', ev.target).filter(function (c) { return c.checked; }).map(function (c) { return c.dataset.penyemak; }).join(','),
       }).then(function (baru) { KEADAAN.tetapan = baru; toast('Tetapan disimpan.'); })
         .catch(function (e) { toast(e.message, 'ralat'); })
@@ -1693,7 +1886,7 @@ PAPARAN.cetak = {
 };
 
 function barisCetak(r, nama) {
-  return '<tr><td>' + esc(nama) + '</td><td>' + fmtPeratus(r.pelaksanaan) + '</td><td>' + fmtPeratus(r.keterlibatan) + '</td>' +
+  return '<tr><td>' + esc(nama) + '</td><td>' + fmtPeratus(r.pelaksanaan) + '</td><td>' + fmtPeratus(r.keterlibatan) + '</td><td>' + (r.bonus && r.skor !== null ? '+' + Math.round(r.bonus * 1000) / 10 + '%' : '—') + '</td>' +
     '<td><b>' + fmtPeratus(r.skor) + '</b> ' + lencanaWarna(r.warna, '') + '</td></tr>';
 }
 
@@ -1711,12 +1904,13 @@ function angkaCetak(k) {
       '<div><span>% Pelaksanaan</span><b>' + fmtPeratus(k.pelaksanaan) + '</b></div>' +
       '<div><span>% Keterlibatan</span><b>' + fmtPeratus(k.keterlibatan) + '</b></div>' +
       '<div><span>Sesi dilaksana</span><b>' + (k.bilSesi || 0) + '</b>' + (k.bilMenunggu ? '<span>' + k.bilMenunggu + ' menunggu semakan</span>' : '') + '</div>' +
+      (k.mataPenyertaan ? '<div><span>Mata Penyertaan</span><b>' + k.mataPenyertaan + '</b><span>bonus +' + Math.round(k.bonus * 1000) / 10 + '%</span></div>' : '') +
     '</div>';
 }
 
 function notaCetak() {
   return '<p style="font-size:10px;color:var(--teks-2);margin-top:18px">Skor KPI = ' + Math.round(KEADAAN.tetapan.BERAT_PELAKSANAAN * 100) + '% pelaksanaan + ' +
-      Math.round(KEADAAN.tetapan.BERAT_KETERLIBATAN * 100) + '% keterlibatan. Hanya laporan yang telah diluluskan dikira. ' +
+      Math.round(KEADAAN.tetapan.BERAT_KETERLIBATAN * 100) + '% keterlibatan, ditambah bonus penyertaan rentas entiti (maks +' + Math.round((KEADAAN.tetapan.BONUS_MAKS || 0.1) * 100) + '%, skor maks 100%). Hanya laporan yang telah diluluskan dikira. ' +
       'Pelaksanaan dikira pro-rata sehingga tarikh laporan.</p>';
 }
 
@@ -1743,6 +1937,12 @@ function htmlCetakEntiti(d) {
         return '<tr><td style="white-space:nowrap">' + tarikhPaparan(s.tarikh) + '</td><td>' + esc(s.nama) + '</td>' +
           '<td>' + esc(s.lokasi || '—') + '</td><td>' + esc(s.jumlah_hadir === '' ? '—' : s.jumlah_hadir) + '</td><td>' + esc(s.penghantar_nama || '—') + '</td></tr>';
       }).join('') + '</tbody></table>' : '<p>Tiada sesi diluluskan dalam tempoh ini.</p>') +
+    '<h2>Penyertaan rentas entiti (' + (d.penyertaan || []).length + ' sesi)</h2>' +
+    ((d.penyertaan || []).length ? '<table class="jadual"><thead><tr><th>Tarikh</th><th>Program</th><th>Pemilik</th><th>Hadir</th><th>Sokongan</th><th>Mata</th></tr></thead><tbody>' +
+      d.penyertaan.map(function (p) {
+        return '<tr><td style="white-space:nowrap">' + tarikhPaparan(p.tarikh) + '</td><td>' + esc(p.nama) + '</td><td>' + esc(kodEntiti(p.pemilik)) + '</td><td>' + (p.hadir || '—') + '</td>' +
+          '<td>' + esc(p.sokongan.map(namaSokongan).join(', ') + (p.catatan ? ' (' + p.catatan + ')' : '')) + '</td><td>' + p.mata + '</td></tr>';
+      }).join('') + '</tbody></table>' : '<p>Tiada penyertaan dalam program entiti lain dalam tempoh ini.</p>') +
     '<h2>Program tertunggak (' + d.tertunggak.length + ')</h2>' +
     (d.tertunggak.length ? '<table class="jadual"><thead><tr><th>Program</th><th>Status</th><th>Capaian</th></tr></thead><tbody>' +
       d.tertunggak.map(function (t) { return '<tr><td>' + esc(t.nama_program) + '</td><td>' + esc(t.sebab) + '</td><td>' + fmtPeratus(t.peratus) + '</td></tr>'; }).join('') +
@@ -1752,7 +1952,7 @@ function htmlCetakEntiti(d) {
 }
 
 function htmlCetak(d) {
-  var kepala = '<thead><tr><th>Entiti</th><th>Pelaksanaan</th><th>Keterlibatan</th><th>Skor KPI</th></tr></thead>';
+  var kepala = '<thead><tr><th>Entiti</th><th>Pelaksanaan</th><th>Keterlibatan</th><th>Bonus</th><th>Skor KPI</th></tr></thead>';
   return '<div class="cetak-halaman">' +
     kepalaCetak(d, 'Laporan KPI UKJ &amp; Lajnah') +
     angkaCetak(d.kad) +
